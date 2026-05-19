@@ -2445,8 +2445,8 @@ else:
                 )
                 _fq_sel = _evt_fq.selection.rows if hasattr(_evt_fq, "selection") else []
 
-                # ── EDITAR / EXCLUIR LANÇAMENTO SELECIONADO ──────────────
-                if _fq_sel and get_permissao(st.session_state.usuario_perfil, "excluir"):
+                # ── EDITAR / EXCLUIR LANÇAMENTO SELECIONADO (somente admin) ──
+                if _fq_sel and st.session_state.usuario_perfil == "admin":
                     _sel_i = _fq_sel[0]
                     _row_mov = _df_fq_ord.iloc[_sel_i]
                     _mov_id = str(_row_mov["id"])
@@ -2575,8 +2575,8 @@ else:
                                 st.success("✅ Lançamento excluído!")
                                 st.rerun()
                 elif _fq_sel:
-                    st.caption("ℹ️ Seu perfil não tem permissão para alterar/excluir lançamentos.")
-                elif get_permissao(st.session_state.usuario_perfil, "excluir") and len(_df_fq) > 0:
+                    st.caption("ℹ️ Somente o administrador pode alterar/excluir lançamentos.")
+                elif st.session_state.usuario_perfil == "admin" and len(_df_fq) > 0:
                     st.caption("💡 Clique em uma linha da tabela para alterar/excluir o lançamento.")
 
                 if len(_df_fq) > 0:
@@ -2986,8 +2986,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stDateInput"] > label {
             if len(df_mov_fil) == 0:
                 st.info("Nenhuma movimentação encontrada para o período selecionado.")
             else:
-                st.divider()
-                # Calcular saldo por material e destino/origem
+                # Cálculo de estoque (compartilhado pelas abas)
                 # Transferência entra no Destino e sai da Origem (lançada nos dois lados)
                 _tipos_ent_est = ["Compra", "Entrada", "Correção de Digitação", "Acerto de Estoque", "Transferência"]
                 entradas = df_mov_fil[df_mov_fil["Tipo"].isin(_tipos_ent_est)].groupby(["Material", "Destino"])["Qtd"].sum().reset_index()
@@ -3007,82 +3006,203 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stDateInput"] > label {
                     prod_info = df_prod[["Material", "Categoria", "Unidade"]].drop_duplicates()
                     estoque = pd.merge(estoque, prod_info, on="Material", how="left")
 
-                # Filtros em linha
-                col_f1, col_f2, col_f3 = st.columns(3)
-                with col_f1:
-                    locais = ["Todos"] + sorted(estoque["Local"].dropna().unique().tolist())
-                    filtro_local = st.selectbox("📍 Filtrar por Local", locais)
-                with col_f2:
-                    df_mat_opts = estoque.copy()
+                st.divider()
+                tab_pos, tab_hist, tab_cat_est = st.tabs([
+                    "📦 Posição Atual", "📜 Histórico do Produto", "🗂️ Por Categoria"
+                ])
+
+                # ── TAB: POSIÇÃO ATUAL ────────────────────────────────
+                with tab_pos:
+                    col_f1, col_f2, col_f3 = st.columns(3)
+                    with col_f1:
+                        locais = ["Todos"] + sorted(estoque["Local"].dropna().unique().tolist())
+                        filtro_local = st.selectbox("📍 Filtrar por Local", locais, key="est_pos_local")
+                    with col_f2:
+                        df_mat_opts = estoque.copy()
+                        if filtro_local != "Todos":
+                            df_mat_opts = df_mat_opts[df_mat_opts["Local"] == filtro_local]
+                        mats = ["Todos"] + sorted(df_mat_opts["Material"].dropna().unique().tolist())
+                        filtro_mat = st.selectbox("🔩 Filtrar por Material", mats, key="est_pos_mat")
+                    with col_f3:
+                        df_cat_opts = estoque.copy()
+                        if filtro_local != "Todos":
+                            df_cat_opts = df_cat_opts[df_cat_opts["Local"] == filtro_local]
+                        if filtro_mat != "Todos":
+                            df_cat_opts = df_cat_opts[df_cat_opts["Material"] == filtro_mat]
+                        cats = ["Todas"]
+                        if "Categoria" in df_cat_opts.columns:
+                            cats += sorted(df_cat_opts["Categoria"].dropna().unique().tolist())
+                        filtro_cat = st.selectbox("🏷️ Filtrar por Categoria", cats, key="est_pos_cat")
+
+                    estoque_filtrado = estoque.copy()
                     if filtro_local != "Todos":
-                        df_mat_opts = df_mat_opts[df_mat_opts["Local"] == filtro_local]
-                    mats = ["Todos"] + sorted(df_mat_opts["Material"].dropna().unique().tolist())
-                    filtro_mat = st.selectbox("🔩 Filtrar por Material", mats)
-                with col_f3:
-                    df_cat_opts = estoque.copy()
-                    if filtro_local != "Todos":
-                        df_cat_opts = df_cat_opts[df_cat_opts["Local"] == filtro_local]
+                        estoque_filtrado = estoque_filtrado[estoque_filtrado["Local"] == filtro_local]
+                    if filtro_cat != "Todas" and "Categoria" in estoque_filtrado.columns:
+                        estoque_filtrado = estoque_filtrado[estoque_filtrado["Categoria"] == filtro_cat]
                     if filtro_mat != "Todos":
-                        df_cat_opts = df_cat_opts[df_cat_opts["Material"] == filtro_mat]
-                    cats = ["Todas"]
-                    if "Categoria" in df_cat_opts.columns:
-                        cats += sorted(df_cat_opts["Categoria"].dropna().unique().tolist())
-                    filtro_cat = st.selectbox("🏷️ Filtrar por Categoria", cats)
+                        estoque_filtrado = estoque_filtrado[estoque_filtrado["Material"] == filtro_mat]
 
-                # Aplicar filtros
-                estoque_filtrado = estoque.copy()
-                if filtro_local != "Todos":
-                    estoque_filtrado = estoque_filtrado[estoque_filtrado["Local"] == filtro_local]
-                if filtro_cat != "Todas" and "Categoria" in estoque_filtrado.columns:
-                    estoque_filtrado = estoque_filtrado[estoque_filtrado["Categoria"] == filtro_cat]
-                if filtro_mat != "Todos":
-                    estoque_filtrado = estoque_filtrado[estoque_filtrado["Material"] == filtro_mat]
+                    estoque_pos = estoque_filtrado[estoque_filtrado["Saldo"] > 0].sort_values(["Local", "Material"])
 
-                # Mostrar apenas itens com saldo > 0
-                estoque_pos = estoque_filtrado[estoque_filtrado["Saldo"] > 0].sort_values(["Local", "Material"])
+                    if len(estoque_pos) > 0:
+                        st.markdown(f"**{len(estoque_pos)} item(ns) em estoque**")
+                        cols_show = ["Material", "Local", "Entrada", "Saída", "Saldo"]
+                        if "Categoria" in estoque_pos.columns:
+                            cols_show = ["Material", "Categoria", "Unidade", "Local", "Entrada", "Saída", "Saldo"]
+                        st.dataframe(estoque_pos[cols_show], width='stretch', hide_index=True)
 
-                if len(estoque_pos) > 0:
-                    st.markdown(f"**{len(estoque_pos)} item(ns) em estoque**")
-                    cols_show = ["Material", "Local", "Entrada", "Saída", "Saldo"]
-                    if "Categoria" in estoque_pos.columns:
-                        cols_show = ["Material", "Categoria", "Unidade", "Local", "Entrada", "Saída", "Saldo"]
-                    st.dataframe(estoque_pos[cols_show], width='stretch', hide_index=True)
+                        st.divider()
+                        st.markdown("**📊 Resumo Geral (todos os locais)**")
+                        resumo_geral = estoque_filtrado.groupby("Material")[["Entrada", "Saída", "Saldo"]].sum().sort_values("Saldo", ascending=False)
+                        st.dataframe(resumo_geral, width='stretch')
 
-                    # Resumo geral por material (respeitando filtros)
-                    st.divider()
-                    st.markdown("**📊 Resumo Geral (todos os locais)**")
-                    resumo_geral = estoque_filtrado.groupby("Material")[["Entrada", "Saída", "Saldo"]].sum().sort_values("Saldo", ascending=False)
-                    st.dataframe(resumo_geral, width='stretch')
+                        filtros_desc = []
+                        if opcao_data == "Hoje":
+                            filtros_desc.append(f"Data: {datetime.today().strftime('%d/%m/%Y')}")
+                        elif opcao_data == "Entre datas" and data_ini_est and data_fim_est:
+                            filtros_desc.append(f"Período: {data_ini_est.strftime('%d/%m/%Y')} a {data_fim_est.strftime('%d/%m/%Y')}")
+                        if filtro_local != "Todos": filtros_desc.append(f"Local: {filtro_local}")
+                        if filtro_cat != "Todas":   filtros_desc.append(f"Categoria: {filtro_cat}")
+                        if filtro_mat != "Todos":   filtros_desc.append(f"Material: {filtro_mat}")
+                        titulo_rel = "Posição de Estoque" + (f" — {', '.join(filtros_desc)}" if filtros_desc else " — Geral")
+                        metricas_rel = {"Itens em estoque": str(len(estoque_pos))}
 
-                    # Título do relatório com filtros aplicados
-                    filtros_desc = []
-                    if opcao_data == "Hoje":
-                        filtros_desc.append(f"Data: {datetime.today().strftime('%d/%m/%Y')}")
-                    elif opcao_data == "Entre datas" and data_ini_est and data_fim_est:
-                        filtros_desc.append(f"Período: {data_ini_est.strftime('%d/%m/%Y')} a {data_fim_est.strftime('%d/%m/%Y')}")
-                    if filtro_local != "Todos": filtros_desc.append(f"Local: {filtro_local}")
-                    if filtro_cat != "Todas":   filtros_desc.append(f"Categoria: {filtro_cat}")
-                    if filtro_mat != "Todos":   filtros_desc.append(f"Material: {filtro_mat}")
-                    titulo_rel = "Posição de Estoque" + (f" — {', '.join(filtros_desc)}" if filtros_desc else " — Geral")
-                    metricas_rel = {"Itens em estoque": str(len(estoque_pos))}
-
-                    if REPORTLAB_OK:
-                        pdf_bytes = gerar_pdf_relatorio(
-                            titulo_rel,
-                            estoque_pos[cols_show].reset_index(drop=True),
-                            metricas_rel
-                        )
-                        st.download_button("🖨️ Exportar PDF", pdf_bytes,
-                                           file_name="estoque_atual.pdf", mime="application/pdf",
-                                           use_container_width=True, key="dl_estoque")
+                        if REPORTLAB_OK:
+                            pdf_bytes = gerar_pdf_relatorio(
+                                titulo_rel, estoque_pos[cols_show].reset_index(drop=True), metricas_rel
+                            )
+                            st.download_button("🖨️ Exportar PDF", pdf_bytes,
+                                               file_name="estoque_atual.pdf", mime="application/pdf",
+                                               use_container_width=True, key="dl_estoque")
+                        else:
+                            html_est = gerar_html_relatorio(titulo_rel, estoque_pos[cols_show].reset_index(drop=True), metricas_rel)
+                            st.download_button("🖨️ Exportar HTML", html_est,
+                                               file_name="estoque_atual.html", mime="text/html",
+                                               use_container_width=True, key="dl_estoque")
+                            st.warning("⚠️ Instale `reportlab` para exportar em PDF: `pip install reportlab`")
                     else:
-                        html_est = gerar_html_relatorio(titulo_rel, estoque_pos[cols_show].reset_index(drop=True), metricas_rel)
-                        st.download_button("🖨️ Exportar HTML", html_est,
-                                           file_name="estoque_atual.html", mime="text/html",
-                                           use_container_width=True, key="dl_estoque")
-                        st.warning("⚠️ Instale `reportlab` para exportar em PDF: `pip install reportlab`")
-                else:
-                    st.info("Nenhum item com saldo positivo no período/filtros selecionados.")
+                        st.info("Nenhum item com saldo positivo no período/filtros selecionados.")
+
+                # ── TAB: HISTÓRICO DO PRODUTO ─────────────────────────
+                with tab_hist:
+                    _mats_hist = sorted(df_mov_fil["Material"].dropna().unique().tolist())
+                    if not _mats_hist:
+                        st.info("Nenhum produto com movimentações no período.")
+                    else:
+                        hist_mat = st.selectbox("🔩 Selecione o Produto", _mats_hist, key="est_hist_mat")
+                        _df_hist = df_mov_fil[df_mov_fil["Material"] == hist_mat].copy()
+                        _df_hist["Data"] = pd.to_datetime(_df_hist["Data"], errors="coerce")
+                        _df_hist = _df_hist.sort_values("Data").reset_index(drop=True)
+
+                        # Delta de saldo por linha (global, somando todos os locais)
+                        def _delta_saldo(r):
+                            t = r["Tipo"]
+                            q = float(r.get("Qtd") or 0)
+                            if t in ("Compra", "Entrada"):
+                                return q
+                            if t == "Saída":
+                                return -q
+                            if t == "Transferência":
+                                return 0  # mesma quantidade, local diferente
+                            if t in ("Correção de Digitação", "Acerto de Estoque"):
+                                return q if r.get("Origem") == "Ajuste de Estoque" else -q
+                            return 0
+                        _df_hist["Delta"] = _df_hist.apply(_delta_saldo, axis=1)
+                        _df_hist["Saldo_Acum"] = _df_hist["Delta"].cumsum()
+
+                        _h_ent = _df_hist[_df_hist["Tipo"].isin(["Compra", "Entrada"])]["Qtd"].sum()
+                        _h_sai = _df_hist[_df_hist["Tipo"] == "Saída"]["Qtd"].sum()
+                        _h_saldo_final = float(_df_hist["Saldo_Acum"].iloc[-1]) if len(_df_hist) > 0 else 0.0
+
+                        _fmt = lambda v: f"{float(v):g}"
+                        st.markdown(f"**{len(_df_hist)} movimentação(ões) de {hist_mat}**")
+                        hm1, hm2, hm3, hm4 = st.columns(4)
+                        hm1.metric("Entradas", _fmt(_h_ent))
+                        hm2.metric("Saídas", _fmt(_h_sai))
+                        hm3.metric("Saldo Final", _fmt(_h_saldo_final))
+                        hm4.metric("Movimentações", str(len(_df_hist)))
+
+                        _cols_hist = [c for c in ["Data", "Tipo", "Origem", "Destino", "Qtd", "Saldo_Acum",
+                                                   "Valor_Unit", "Valor_Total", "Fornecedor", "Data_NF", "Num_NF",
+                                                   "Observacao", "Usuario"] if c in _df_hist.columns]
+                        _df_hist_show = fmt_datas(_df_hist[_cols_hist])
+                        st.dataframe(_df_hist_show, width='stretch', hide_index=True)
+
+                        _met_h = {
+                            "Entradas":     _fmt(_h_ent),
+                            "Saídas":       _fmt(_h_sai),
+                            "Saldo Final":  _fmt(_h_saldo_final),
+                            "Movimentações": str(len(_df_hist)),
+                        }
+                        _titulo_h = f"Histórico — {hist_mat}"
+                        _fname_h = "historico_" + "".join(ch if ch.isalnum() else "_" for ch in hist_mat)[:40]
+                        if REPORTLAB_OK:
+                            st.download_button(
+                                "🖨️ Exportar PDF — Histórico",
+                                gerar_pdf_relatorio(_titulo_h, _df_hist_show.reset_index(drop=True), _met_h),
+                                file_name=f"{_fname_h}.pdf", mime="application/pdf",
+                                use_container_width=True, key="dl_hist_pdf")
+                        else:
+                            st.download_button(
+                                "🖨️ Exportar HTML — Histórico",
+                                gerar_html_relatorio(_titulo_h, _df_hist_show.reset_index(drop=True), _met_h),
+                                file_name=f"{_fname_h}.html", mime="text/html",
+                                use_container_width=True, key="dl_hist_html")
+
+                # ── TAB: POR CATEGORIA ────────────────────────────────
+                with tab_cat_est:
+                    if "Categoria" not in estoque.columns or estoque["Categoria"].dropna().empty:
+                        st.info("Sem categorias cadastradas para os produtos.")
+                    else:
+                        _col_c1, _col_c2 = st.columns([2, 1])
+                        with _col_c1:
+                            _locais_cat = ["Todos"] + sorted(estoque["Local"].dropna().unique().tolist())
+                            cat_filtro_local = st.selectbox("📍 Local", _locais_cat, key="est_cat_local")
+                        with _col_c2:
+                            _show_zero = st.checkbox("Mostrar saldo zero", value=False, key="est_cat_zero")
+
+                        _est_cat = estoque.copy()
+                        if cat_filtro_local != "Todos":
+                            _est_cat = _est_cat[_est_cat["Local"] == cat_filtro_local]
+                        if not _show_zero:
+                            _est_cat = _est_cat[_est_cat["Saldo"] > 0]
+                        _est_cat = _est_cat.sort_values(["Categoria", "Material", "Local"])
+
+                        if len(_est_cat) == 0:
+                            st.info("Nenhum item para os filtros selecionados.")
+                        else:
+                            _cats_unicas = sorted(_est_cat["Categoria"].dropna().unique().tolist())
+                            st.markdown(f"**{len(_est_cat)} item(ns) em {len(_cats_unicas)} categoria(s)**")
+
+                            _cols_cat_show = [c for c in ["Material", "Unidade", "Local", "Entrada", "Saída", "Saldo"]
+                                              if c in _est_cat.columns]
+                            for _cat in _cats_unicas:
+                                _grupo = _est_cat[_est_cat["Categoria"] == _cat]
+                                st.markdown(f"#### 🗂️ {_cat}  —  {len(_grupo)} item(ns)")
+                                st.dataframe(_grupo[_cols_cat_show], width='stretch', hide_index=True)
+
+                            _sem_cat = _est_cat[_est_cat["Categoria"].isna()]
+                            if len(_sem_cat) > 0:
+                                st.markdown(f"#### 🗂️ (Sem Categoria) — {len(_sem_cat)} item(ns)")
+                                st.dataframe(_sem_cat[_cols_cat_show], width='stretch', hide_index=True)
+
+                            _cols_cat_exp = [c for c in ["Categoria", "Material", "Unidade", "Local", "Entrada", "Saída", "Saldo"]
+                                             if c in _est_cat.columns]
+                            _df_cat_exp = _est_cat[_cols_cat_exp].reset_index(drop=True)
+                            _met_cat = {"Itens": str(len(_est_cat)), "Categorias": str(len(_cats_unicas))}
+                            _titulo_cat = "Estoque por Categoria" + (f" — {cat_filtro_local}" if cat_filtro_local != "Todos" else "")
+                            if REPORTLAB_OK:
+                                st.download_button(
+                                    "🖨️ Exportar PDF — Por Categoria",
+                                    gerar_pdf_relatorio(_titulo_cat, _df_cat_exp, _met_cat),
+                                    file_name="estoque_por_categoria.pdf", mime="application/pdf",
+                                    use_container_width=True, key="dl_estcat_pdf")
+                            else:
+                                st.download_button(
+                                    "🖨️ Exportar HTML — Por Categoria",
+                                    gerar_html_relatorio(_titulo_cat, _df_cat_exp, _met_cat),
+                                    file_name="estoque_por_categoria.html", mime="text/html",
+                                    use_container_width=True, key="dl_estcat_html")
 
         st.markdown("")
         if st.button("🏠 Voltar ao Painel", use_container_width=True):
