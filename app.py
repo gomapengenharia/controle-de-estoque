@@ -2396,23 +2396,32 @@ else:
 
                 # ── CONSULTA RÁPIDA COM FILTROS ──────────────────────────
                 st.divider()
-                st.markdown("#### 🔍 Consulta Rápida por Tipo / Local / Material")
+                st.markdown("#### 🔍 Consulta Rápida por Tipo / Local / Material / Data")
                 with st.container(border=True):
-                    _cq1, _cq2, _cq3 = st.columns(3)
+                    _cq1, _cq2, _cq3, _cq4 = st.columns(4)
                     _locais_cq = sorted(set(
                         df_mov["Origem"].dropna().tolist() +
                         df_mov["Destino"].dropna().tolist()
                     ))
                     _mats_cq = sorted(df_mov["Material"].dropna().unique().tolist())
                     _tipos_fq = ["Todos", "Compra", "Entrada", "Saída", "Transferência", "Correção de Digitação", "Acerto de Estoque"]
-                    _fq_tipo  = _cq1.selectbox("📋 Tipo", _tipos_fq, key="fq_tipo")
-                    _fq_local = _cq2.selectbox("📍 Local (Origem ou Destino)", ["Todos"] + _locais_cq, key="fq_local")
-                    _fq_mat   = _cq3.selectbox("📦 Material", ["Todos"] + _mats_cq, key="fq_mat")
+                    _periodos_fq = ["Todo o período", "Este mês", "Este ano",
+                                    "Últimos 7 dias", "Últimos 30 dias", "Últimos 90 dias", "Personalizado"]
+                    _fq_tipo    = _cq1.selectbox("📋 Tipo", _tipos_fq, key="fq_tipo")
+                    _fq_local   = _cq2.selectbox("📍 Local (Origem ou Destino)", ["Todos"] + _locais_cq, key="fq_local")
+                    _fq_mat     = _cq3.selectbox("📦 Material", ["Todos"] + _mats_cq, key="fq_mat")
+                    _fq_periodo = _cq4.selectbox("📅 Período", _periodos_fq, key="fq_periodo")
+                    _fq_ini = _fq_fim = None
+                    if _fq_periodo == "Personalizado":
+                        _cqp1, _cqp2 = st.columns(2)
+                        _fq_ini = _cqp1.date_input("Data inicial", value=None, format="DD/MM/YYYY", key="fq_ini")
+                        _fq_fim = _cqp2.date_input("Data final",   value=None, format="DD/MM/YYYY", key="fq_fim")
 
                 _df_fq = df_mov.copy()
                 if _fq_tipo  != "Todos": _df_fq = _df_fq[_df_fq["Tipo"] == _fq_tipo]
                 if _fq_local != "Todos": _df_fq = _df_fq[(_df_fq["Origem"] == _fq_local) | (_df_fq["Destino"] == _fq_local)]
                 if _fq_mat   != "Todos": _df_fq = _df_fq[_df_fq["Material"] == _fq_mat]
+                _df_fq = aplicar_filtro_periodo(_df_fq, "Data", _fq_periodo, _fq_ini, _fq_fim)
 
                 _ent_fq = _df_fq[_df_fq["Tipo"].isin(["Compra", "Entrada"])]["Qtd"].sum()
                 _sai_fq = _df_fq[_df_fq["Tipo"] == "Saída"]["Qtd"].sum()
@@ -2430,9 +2439,10 @@ else:
 
                 if len(_df_fq) > 0:
                     _titulo_fq = "Lançamentos"
-                    if _fq_tipo  != "Todos": _titulo_fq += f" — {_fq_tipo}"
-                    if _fq_local != "Todos": _titulo_fq += f" — {_fq_local}"
-                    if _fq_mat   != "Todos": _titulo_fq += f" — {_fq_mat}"
+                    if _fq_tipo    != "Todos":          _titulo_fq += f" — {_fq_tipo}"
+                    if _fq_local   != "Todos":          _titulo_fq += f" — {_fq_local}"
+                    if _fq_mat     != "Todos":          _titulo_fq += f" — {_fq_mat}"
+                    if _fq_periodo != "Todo o período": _titulo_fq += f" — {_fq_periodo}"
                     _met_fq = {
                         "Entradas":    f"{_ent_fq:.0f}",
                         "Saídas":      f"{_sai_fq:.0f}",
@@ -3347,6 +3357,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stDateInput"] > label {
             st.markdown("")
             if st.button("🏠 Voltar ao Painel", use_container_width=True, key="loc_voltar"):
                 ir_para("Início")
+
 
 
 
