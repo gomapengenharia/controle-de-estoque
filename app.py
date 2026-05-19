@@ -2454,9 +2454,11 @@ else:
                     def _limpar_fq_sel():
                         st.session_state["_fq_tbl_v"] = _fq_tbl_v + 1
 
+                    try:    _qtd_disp = f"{float(_row_mov.get('Qtd', 0) or 0):g}"
+                    except (ValueError, TypeError): _qtd_disp = "0"
                     _info_lanc = (f"{_sv(_row_mov.get('Tipo',''))} — "
                                   f"{_sv(_row_mov.get('Material',''))} — "
-                                  f"Qtd {_sv(_row_mov.get('Qtd','0'))} — "
+                                  f"Qtd {_qtd_disp} — "
                                   f"{pd.to_datetime(_row_mov.get('Data'), errors='coerce').strftime('%d/%m/%Y') if pd.notna(pd.to_datetime(_row_mov.get('Data'), errors='coerce')) else ''}")
                     st.markdown(
                         f'<div translate="no" style="background-color:#dff0fb;padding:0.75rem 1rem;'
@@ -2562,7 +2564,7 @@ else:
                     with _ec2:
                         with st.expander("🗑️ Excluir Lançamento"):
                             st.warning(f"Excluir **{_info_lanc}**? Esta ação não pode ser desfeita.")
-                            if st.button("🗑️ Confirmar Exclusão", type="primary", use_container_width=True,
+                            if st.button("🗑️ Confirmar Exclusão", type="secondary", use_container_width=True,
                                          key=f"fq_del_{_mov_id}"):
                                 try:
                                     _delete_ids("stock_movements", [_mov_id])
@@ -3497,6 +3499,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stDateInput"] > label {
             st.markdown("")
             if st.button("🏠 Voltar ao Painel", use_container_width=True, key="loc_voltar"):
                 ir_para("Início")
+
 
 
 
