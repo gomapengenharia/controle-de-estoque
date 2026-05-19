@@ -2404,10 +2404,11 @@ else:
                         df_mov["Destino"].dropna().tolist()
                     ))
                     _mats_cq = sorted(df_mov["Material"].dropna().unique().tolist())
-                    _tipos_fq = ["Todos", "Compra", "Entrada", "Saída", "Transferência", "Correção de Digitação", "Acerto de Estoque"]
+                    _tipos_fq = ["Compra", "Entrada", "Saída", "Transferência", "Correção de Digitação", "Acerto de Estoque"]
                     _periodos_fq = ["Todo o período", "Este mês", "Este ano",
                                     "Últimos 7 dias", "Últimos 30 dias", "Últimos 90 dias", "Personalizado"]
-                    _fq_tipo    = _cq1.selectbox("📋 Tipo", _tipos_fq, key="fq_tipo")
+                    _fq_tipos   = _cq1.multiselect("📋 Tipo (vazio = todos)", _tipos_fq, key="fq_tipo",
+                                                   help="Selecione um ou mais tipos. Ex.: Compra + Entrada para ver tudo que somou estoque.")
                     _fq_local   = _cq2.selectbox("📍 Local (Origem ou Destino)", ["Todos"] + _locais_cq, key="fq_local")
                     _fq_mat     = _cq3.selectbox("📦 Material", ["Todos"] + _mats_cq, key="fq_mat")
                     _fq_periodo = _cq4.selectbox("📅 Período", _periodos_fq, key="fq_periodo")
@@ -2418,7 +2419,7 @@ else:
                         _fq_fim = _cqp2.date_input("Data final",   value=None, format="DD/MM/YYYY", key="fq_fim")
 
                 _df_fq = df_mov.copy()
-                if _fq_tipo  != "Todos": _df_fq = _df_fq[_df_fq["Tipo"] == _fq_tipo]
+                if _fq_tipos:            _df_fq = _df_fq[_df_fq["Tipo"].isin(_fq_tipos)]
                 if _fq_local != "Todos": _df_fq = _df_fq[(_df_fq["Origem"] == _fq_local) | (_df_fq["Destino"] == _fq_local)]
                 if _fq_mat   != "Todos": _df_fq = _df_fq[_df_fq["Material"] == _fq_mat]
                 _df_fq = aplicar_filtro_periodo(_df_fq, "Data", _fq_periodo, _fq_ini, _fq_fim)
@@ -2434,12 +2435,151 @@ else:
                 _mc3.metric("Saldo",    f"{_ent_fq - _sai_fq:.0f}")
                 _mc4.metric("Valor Total", f"R$ {_vt_fq:,.2f}")
 
-                _df_fq_show = fmt_datas(cols_mov_user(_df_fq.iloc[::-1]))
-                st.dataframe(_df_fq_show, width='stretch', hide_index=True)
+                _df_fq_ord = _df_fq.iloc[::-1].reset_index(drop=True)
+                _df_fq_show = fmt_datas(cols_mov_user(_df_fq_ord))
+                _fq_tbl_v = st.session_state.get("_fq_tbl_v", 0)
+                _evt_fq = st.dataframe(
+                    _df_fq_show, width='stretch', hide_index=True,
+                    on_select="rerun", selection_mode="single-row",
+                    key=f"df_fq_tbl_{_fq_tbl_v}"
+                )
+                _fq_sel = _evt_fq.selection.rows if hasattr(_evt_fq, "selection") else []
+
+                # ── EDITAR / EXCLUIR LANÇAMENTO SELECIONADO ──────────────
+                if _fq_sel and get_permissao(st.session_state.usuario_perfil, "excluir"):
+                    _sel_i = _fq_sel[0]
+                    _row_mov = _df_fq_ord.iloc[_sel_i]
+                    _mov_id = str(_row_mov["id"])
+
+                    def _limpar_fq_sel():
+                        st.session_state["_fq_tbl_v"] = _fq_tbl_v + 1
+
+                    _info_lanc = (f"{_sv(_row_mov.get('Tipo',''))} — "
+                                  f"{_sv(_row_mov.get('Material',''))} — "
+                                  f"Qtd {_sv(_row_mov.get('Qtd','0'))} — "
+                                  f"{pd.to_datetime(_row_mov.get('Data'), errors='coerce').strftime('%d/%m/%Y') if pd.notna(pd.to_datetime(_row_mov.get('Data'), errors='coerce')) else ''}")
+                    st.markdown(
+                        f'<div translate="no" style="background-color:#dff0fb;padding:0.75rem 1rem;'
+                        f'border-radius:0.5rem;border-left:5px solid #2196F3;margin:0.5rem 0;font-size:1rem;">'
+                        f'📌 Selecionado: <strong>{_info_lanc}</strong></div>',
+                        unsafe_allow_html=True
+                    )
+
+                    _ec1, _ec2 = st.columns(2)
+                    with _ec1:
+                        with st.expander("✏️ Alterar Lançamento"):
+                            _afv = st.session_state.get("_fq_alt_v", 0)
+                            _dt_cur = pd.to_datetime(_row_mov.get("Data"), errors="coerce")
+                            _dt_cur = _dt_cur.date() if pd.notna(_dt_cur) else datetime.today().date()
+                            _tipos_e = ["Compra", "Entrada", "Saída", "Transferência", "Correção de Digitação", "Acerto de Estoque"]
+                            _tipo_cur = _sv(_row_mov.get("Tipo", "Entrada"))
+                            _tipo_idx = _tipos_e.index(_tipo_cur) if _tipo_cur in _tipos_e else 0
+
+                            _ae1, _ae2 = st.columns(2)
+                            alt_data = _ae1.date_input("📅 Data", value=_dt_cur, format="DD/MM/YYYY",
+                                                       key=f"fq_alt_data_{_mov_id}_{_afv}")
+                            alt_tipo = _ae2.selectbox("📋 Tipo", _tipos_e, index=_tipo_idx,
+                                                      key=f"fq_alt_tipo_{_mov_id}_{_afv}")
+
+                            _mats_e = sorted(load("prod")["Material"].dropna().unique().tolist())
+                            _mat_cur = _sv(_row_mov.get("Material", ""))
+                            _mat_idx = _mats_e.index(_mat_cur) if _mat_cur in _mats_e else 0
+                            alt_mat = st.selectbox("📦 Material", _mats_e, index=_mat_idx,
+                                                   key=f"fq_alt_mat_{_mov_id}_{_afv}")
+
+                            _ae3, _ae4 = st.columns(2)
+                            alt_orig = _ae3.text_input("📍 Origem", value=_sv(_row_mov.get("Origem", "")),
+                                                       key=f"fq_alt_orig_{_mov_id}_{_afv}")
+                            alt_dest = _ae4.text_input("📍 Destino", value=_sv(_row_mov.get("Destino", "")),
+                                                       key=f"fq_alt_dest_{_mov_id}_{_afv}")
+
+                            _ae5, _ae6 = st.columns(2)
+                            try:    _qtd_cur = float(_row_mov.get("Qtd", 0) or 0)
+                            except (ValueError, TypeError): _qtd_cur = 0.0
+                            try:    _vu_cur = float(_row_mov.get("Valor_Unit") or 0)
+                            except (ValueError, TypeError): _vu_cur = 0.0
+                            alt_qtd = _ae5.number_input("📊 Quantidade", value=_qtd_cur, min_value=0.0,
+                                                         step=1.0, format="%.2f",
+                                                         key=f"fq_alt_qtd_{_mov_id}_{_afv}")
+                            alt_vu  = _ae6.number_input("💰 Valor Unitário (R$)", value=_vu_cur, min_value=0.0,
+                                                         step=0.01, format="%.2f",
+                                                         key=f"fq_alt_vu_{_mov_id}_{_afv}")
+
+                            alt_obs = st.text_input("📝 Observação", value=_sv(_row_mov.get("Observacao", "")),
+                                                    key=f"fq_alt_obs_{_mov_id}_{_afv}")
+
+                            alt_forn = _sv(_row_mov.get("Fornecedor", ""))
+                            alt_data_nf = None
+                            alt_num_nf = _sv(_row_mov.get("Num_NF", ""))
+                            if alt_tipo == "Compra":
+                                _forn_list = ["--- Selecione ---"] + sorted(load("forn")["Nome_Fornecedor"].dropna().unique().tolist())
+                                _forn_idx = _forn_list.index(alt_forn) if alt_forn in _forn_list else 0
+                                _af1, _af2, _af3 = st.columns(3)
+                                alt_forn = _af1.selectbox("🏢 Fornecedor", _forn_list, index=_forn_idx,
+                                                           key=f"fq_alt_forn_{_mov_id}_{_afv}")
+                                _dnf_cur = pd.to_datetime(_row_mov.get("Data_NF"), errors="coerce")
+                                _dnf_cur = _dnf_cur.date() if pd.notna(_dnf_cur) else None
+                                alt_data_nf = _af2.date_input("📅 Data NF", value=_dnf_cur, format="DD/MM/YYYY",
+                                                               key=f"fq_alt_dnf_{_mov_id}_{_afv}")
+                                alt_num_nf  = _af3.text_input("🔢 Número NF", value=alt_num_nf,
+                                                               key=f"fq_alt_nnf_{_mov_id}_{_afv}")
+
+                            if st.button("💾 Salvar Alteração", type="primary", use_container_width=True,
+                                         key=f"fq_alt_save_{_mov_id}_{_afv}"):
+                                _df_p_e = load("prod")
+                                _matched = _df_p_e[_df_p_e["Material"] == alt_mat]
+                                _cat_e = _sv(_matched.iloc[0]["Categoria"]) if len(_matched) > 0 else ""
+                                _un_e  = _sv(_matched.iloc[0]["Unidade"])   if len(_matched) > 0 else ""
+                                _vt_e  = round(alt_qtd * alt_vu, 2) if alt_vu > 0 else None
+                                _alt_dict = {
+                                    "Data":        alt_data.strftime("%Y-%m-%d"),
+                                    "Tipo":        alt_tipo,
+                                    "Material":    alt_mat,
+                                    "Categoria":   _cat_e,
+                                    "Unidade":     _un_e,
+                                    "Origem":      alt_orig.strip(),
+                                    "Destino":     alt_dest.strip(),
+                                    "Qtd":         float(alt_qtd),
+                                    "Valor_Unit":  float(alt_vu) if alt_vu > 0 else None,
+                                    "Valor_Total": _vt_e,
+                                    "Fornecedor":  alt_forn if alt_tipo == "Compra" and alt_forn != "--- Selecione ---" else None,
+                                    "Data_NF":     alt_data_nf.strftime("%Y-%m-%d") if alt_tipo == "Compra" and alt_data_nf else None,
+                                    "Num_NF":      alt_num_nf if alt_tipo == "Compra" else None,
+                                    "Observacao":  alt_obs.strip(),
+                                    "Usuario":     _sv(_row_mov.get("Usuario", "")),
+                                }
+                                try:
+                                    _db_rec_alt = _build_db_record(_alt_dict, TABLE_CONFIG["mov"])
+                                    _update_row("stock_movements", _db_rec_alt, _mov_id)
+                                except Exception as _e_alt:
+                                    st.error(f"❌ Erro ao salvar alteração: {_e_alt}")
+                                    st.stop()
+                                st.session_state["_fq_alt_v"] = _afv + 1
+                                _limpar_fq_sel()
+                                st.success("✅ Lançamento alterado!")
+                                st.rerun()
+
+                    with _ec2:
+                        with st.expander("🗑️ Excluir Lançamento"):
+                            st.warning(f"Excluir **{_info_lanc}**? Esta ação não pode ser desfeita.")
+                            if st.button("🗑️ Confirmar Exclusão", type="primary", use_container_width=True,
+                                         key=f"fq_del_{_mov_id}"):
+                                try:
+                                    _delete_ids("stock_movements", [_mov_id])
+                                except Exception as _e_del:
+                                    st.error(f"❌ Erro ao excluir: {_e_del}")
+                                    st.stop()
+                                _limpar_fq_sel()
+                                st.success("✅ Lançamento excluído!")
+                                st.rerun()
+                elif _fq_sel:
+                    st.caption("ℹ️ Seu perfil não tem permissão para alterar/excluir lançamentos.")
+                elif get_permissao(st.session_state.usuario_perfil, "excluir") and len(_df_fq) > 0:
+                    st.caption("💡 Clique em uma linha da tabela para alterar/excluir o lançamento.")
 
                 if len(_df_fq) > 0:
                     _titulo_fq = "Lançamentos"
-                    if _fq_tipo    != "Todos":          _titulo_fq += f" — {_fq_tipo}"
+                    if _fq_tipos:                       _titulo_fq += f" — {' + '.join(_fq_tipos)}"
                     if _fq_local   != "Todos":          _titulo_fq += f" — {_fq_local}"
                     if _fq_mat     != "Todos":          _titulo_fq += f" — {_fq_mat}"
                     if _fq_periodo != "Todo o período": _titulo_fq += f" — {_fq_periodo}"
@@ -3357,6 +3497,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stDateInput"] > label {
             st.markdown("")
             if st.button("🏠 Voltar ao Painel", use_container_width=True, key="loc_voltar"):
                 ir_para("Início")
+
 
 
 
