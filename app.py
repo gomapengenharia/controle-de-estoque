@@ -1669,8 +1669,8 @@ else:
                 if st.button("✅ Salvar Obra", type="primary", use_container_width=True):
                     if nova_ob:
                         df = load("obras")
-                        save(_concat_safe([df, pd.DataFrame([{"Nome_Obra": nova_ob.strip().upper()}])]), "obras")
-                        st.success(f"✅ Obra '{nova_ob.upper()}' criada!")
+                        save(_concat_safe([df, pd.DataFrame([{"Nome_Obra": nova_ob.strip()}])]), "obras")
+                        st.success(f"✅ Obra '{nova_ob.strip()}' criada!")
                         st.rerun()
                     else:
                         st.warning("Digite o nome da obra.")
@@ -3401,8 +3401,8 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stDateInput"] > label {
                     if st.button("✅ Salvar", type="primary", use_container_width=True, key="sv_ob"):
                         if ob:
                             df = load("obras")
-                            save(_concat_safe([df, pd.DataFrame([{"Nome_Obra": ob.strip().upper()}])]), "obras")
-                            st.success(f"✅ '{ob.upper()}' cadastrada!")
+                            save(_concat_safe([df, pd.DataFrame([{"Nome_Obra": ob.strip()}])]), "obras")
+                            st.success(f"✅ '{ob.strip()}' cadastrada!")
                             st.rerun()
 
                 with st.container(border=True):
